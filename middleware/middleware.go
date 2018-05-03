@@ -5,12 +5,12 @@ import (
 
 	"context"
 
-	"crypto/rsa"
-
+	"github.com/24COMS/go.openid/validator"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/dgrijalva/jwt-go/request"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/urfave/negroni"
 )
 
 // ContextKey defines the type that the middleware will use to set / get http.Request context values
@@ -21,87 +21,93 @@ const (
 	ContextKeyToken ContextKey = "token"
 )
 
-// Middleware contains all the middleware dependencies
-type Middleware struct {
+// middleware contains all the middleware dependencies
+type middleware struct {
 	requiredScopes []string
 	logger         logrus.FieldLogger
-	rsaPublicKey   []*rsa.PublicKey
+	validator      access.Validator
 }
 
-// New creates a new openid Middleware object and sets all dependencies
-func New(logger logrus.FieldLogger, requiredScopes []string, key ...*rsa.PublicKey) (*Middleware, error) {
-	m := &Middleware{
+// New creates a new openid middleware object and sets all dependencies
+func New(logger logrus.FieldLogger, requiredScopes []string, validator access.Validator) (negroni.Handler, error) {
+	m := &middleware{
 		logger:         logger,
-		rsaPublicKey:   key,
+		validator:      validator,
 		requiredScopes: requiredScopes,
 	}
 
 	return m, nil
 }
 
-// SetRSAPublicKey will configure the new RSA keys to check the bearer access token signature
-func (m *Middleware) SetRSAPublicKey(rsaPublicKey []*rsa.PublicKey) {
-	m.rsaPublicKey = rsaPublicKey
-}
+func (m *middleware) checkRequiredScopes(scopes []string) bool {
+	// First checking if user has enough number of scopes
+	if len(scopes) < len(m.requiredScopes) {
+		return false
+	}
 
-func (m *Middleware) checkRequiredScopes(scopes []string) bool {
-	// Check the scope and requiredScopes for matches
-	count := 0
+	// Create set of unique user scopes
+	userScopes := make(map[string]struct{}, len(scopes))
 	for _, sc := range scopes {
-		for _, requiredScope := range m.requiredScopes {
-			if requiredScope == sc {
-				count++
-			}
-		}
+		userScopes[sc] = struct{}{}
 	}
 
-	// If all the required scope are in the scope of the token, the scope are valid
-	return count == len(m.requiredScopes)
+	// Iterating over slice of required scopes. Return false on first absent scope
+	for _, reqScope := range m.requiredScopes {
+		if _, ok := userScopes[reqScope]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
-// Wrap adds the middleware to the given handler
-func (m *Middleware) Wrap(handler http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		validToken := false
-		var token *jwt.Token
-		for _, key := range m.rsaPublicKey {
-			t, err := request.ParseFromRequest(r, request.AuthorizationHeaderExtractor, func(token *jwt.Token) (interface{}, error) {
-				return key, nil
-			})
-
-			// Check if no errors
-			if err == nil {
-				token = t
-				validToken = true
-				break
-			}
+// ServeHTTP implements negroni.Handler interface
+func (m *middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	var token *jwt.Token
+	for _, key := range m.validator.GetRSAPubKeys() {
+		t, err := request.ParseFromRequest(r, request.AuthorizationHeaderExtractor, func(_ *jwt.Token) (interface{}, error) {
+			return key, nil
+		})
+		if err != nil {
+			m.logger.Info(errors.Wrap(err, "failed to parse JWT from request"))
+			continue
 		}
 
-		if !validToken {
-			if m.logger != nil {
-				m.logger.WithField("err", errors.New("token invalid")).Infof("Error validating token in OpenID middleware")
-			}
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		// Check if the required audience is present
-		claims := token.Claims.(jwt.MapClaims)
-		actualScopes := claims["scope"].([]interface{})
-		var scopes []string
-		for _, aud := range actualScopes {
-			scopes = append(scopes, aud.(string))
-		}
-
-		if !m.checkRequiredScopes(scopes) {
-			if m.logger != nil {
-				m.logger.WithField("requiredScopes", m.requiredScopes).WithField("scopes", scopes).Infof("Error validating token in OpenID middleware, required scopes not available")
-			}
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-
-		// Execute the next handler
-		handler(w, r.WithContext(context.WithValue(r.Context(), ContextKeyToken, token)))
+		token = t
+		break
 	}
+
+	if token == nil {
+		m.logger.WithField("err", errors.New("token invalid")).Info("Error validating token in OpenID middleware")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	// Check if the required audience is present
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		m.logger.Error("failed to assert type (jwt.MapClaims) from token.Claims")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	actualScopes, ok := claims["scope"].([]interface{})
+	if !ok {
+		m.logger.Error(`failed to assert type ([]interface{}) from claims["scope"]`)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var scopes []string
+	for _, aud := range actualScopes {
+		if scope, ok := aud.(string); ok {
+			scopes = append(scopes, scope)
+		}
+	}
+
+	if !m.checkRequiredScopes(scopes) {
+		m.logger.WithField("requiredScopes", m.requiredScopes).WithField("scopes", scopes).Info("Error validating token in OpenID middleware, required scopes not available")
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	next(w, r.WithContext(context.WithValue(r.Context(), ContextKeyToken, token)))
 }
