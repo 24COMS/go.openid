@@ -33,6 +33,8 @@ type validator struct {
 	logger             logrus.FieldLogger
 }
 
+const openIDCfgPath = "/.well-known/openid-configuration"
+
 // New creates validator which implements access.Validator interface
 // discoveryURI is the uri to the openid discovery document.
 // evaluationInterval is the interval (in minutest) after which the RSAPublicKey
@@ -41,10 +43,15 @@ func New(ctx context.Context, wg *sync.WaitGroup, logger logrus.FieldLogger, dom
 	v := validator{
 		logger:             logger,
 		expiresAt:          time.Now().Add(evaluationInterval),
-		discoveryURI:       domain + "/.well-known/openid-configuration",
 		evaluationInterval: evaluationInterval,
 		requiredScopes:     requiredScopes,
 	}
+
+	if !strings.HasSuffix(domain, openIDCfgPath) {
+		domain += openIDCfgPath
+	}
+
+	v.discoveryURI = domain
 
 	//first get the pemBytes from the discovery endpoint
 	data, err := v.getPublicKeyCertificate(v.discoveryURI)
