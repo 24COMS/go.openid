@@ -5,7 +5,6 @@
 package openidvalidator
 
 import (
-	"24coms-dialog/validator"
 	"bytes"
 	"context"
 	"crypto/rsa"
@@ -16,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/24COMS/go.openid/validator"
 	"github.com/SermoDigital/jose/crypto"
 	"github.com/SermoDigital/jose/jws"
 	"github.com/SermoDigital/jose/jwt"
@@ -35,23 +35,31 @@ type validator struct {
 
 const openIDCfgPath = "/.well-known/openid-configuration"
 
+// Config for new openID validator
+type Config struct {
+	Logger             logrus.FieldLogger
+	Domain             string
+	EvaluationInterval time.Duration
+	RequiredScopes     []string
+}
+
 // New creates validator which implements access.Validator interface
 // discoveryURI is the uri to the openid discovery document.
 // evaluationInterval is the interval (in minutest) after which the RSAPublicKey
 // will be automatically re-acquired from the discovery source. RequiredScopes is self-explanatory.
-func New(ctx context.Context, wg *sync.WaitGroup, logger logrus.FieldLogger, domain string, evaluationInterval time.Duration, requiredScopes []string) (access.Validator, error) {
+func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator, error) {
 	v := validator{
-		logger:             logger,
-		expiresAt:          time.Now().Add(evaluationInterval),
-		evaluationInterval: evaluationInterval,
-		requiredScopes:     requiredScopes,
+		logger:             cfg.Logger,
+		expiresAt:          time.Now().Add(cfg.EvaluationInterval),
+		evaluationInterval: cfg.EvaluationInterval,
+		requiredScopes:     cfg.RequiredScopes,
 	}
 
-	if !strings.HasSuffix(domain, openIDCfgPath) {
-		domain += openIDCfgPath
+	if !strings.HasSuffix(cfg.Domain, openIDCfgPath) {
+		cfg.Domain += openIDCfgPath
 	}
 
-	v.discoveryURI = domain
+	v.discoveryURI = cfg.Domain
 
 	//first get the pemBytes from the discovery endpoint
 	data, err := v.getPublicKeyCertificate(v.discoveryURI)
@@ -66,7 +74,12 @@ func New(ctx context.Context, wg *sync.WaitGroup, logger logrus.FieldLogger, dom
 	}
 
 	//Print everything, for debugging
-	logger.Debugf("Uri:%s\nPubKey:%T\nexpiresAt:%s\nevaluationInterval:%d\n", v.discoveryURI, v.RSAPubKey, v.expiresAt.UTC().Format(time.UnixDate), evaluationInterval)
+	v.logger.Debugf(
+		"Uri:%s\nPubKey:%T\nexpiresAt:%s\nevaluationInterval:%d\n",
+		v.discoveryURI, v.RSAPubKey,
+		v.expiresAt.UTC().Format(time.UnixDate),
+		v.evaluationInterval,
+	)
 
 	//Start the refresh cycle
 	err = v.autoRefreshPublicKey(ctx, wg)
