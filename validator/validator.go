@@ -6,6 +6,8 @@ import (
 	"github.com/SermoDigital/jose/jwt"
 )
 
+//go:generate charlatan -output ./mock/mock.go -package validatorMock Validator
+
 // Validator describes common interface for all permission validators
 type Validator interface {
 	CheckRSAExpiration() error
