@@ -1,11 +1,16 @@
 package access
 
-import "crypto/rsa"
+import (
+	"crypto/rsa"
+
+	"github.com/SermoDigital/jose/jwt"
+)
 
 // Validator describes common interface for all permission validators
 type Validator interface {
 	CheckRSAExpiration() error
 	GetRSAPubKeys() []*rsa.PublicKey
-	ValidateApplicationToken(accessToken string) (bool, error)
-	ValidateUserToken(accessToken string) (uint64, uint64, bool, error)
+	ValidateApplicationToken(accessToken string, requiredScopes ...string) (bool, error)
+	GetAndValidateToken(accessToken string, requiredScopes ...string) (jwt.JWT, error)
+	ValidateUserToken(accessToken string, requiredScopes ...string) (uint64, uint64, bool, error)
 }
