@@ -25,34 +25,35 @@ import (
 
 // validator struct implements openID validator
 type validator struct {
-	discoveryURI       string
-	RSAPubKey          *rsa.PublicKey
-	expiresAt          time.Time
-	evaluationInterval time.Duration
-	requiredScopes     []string
-	logger             logrus.FieldLogger
+	discoveryURI          string
+	RSAPubKey             *rsa.PublicKey
+	expiresAt             time.Time
+	evaluationInterval    time.Duration
+	defaultRequiredScopes []string
+	logger                logrus.FieldLogger
 }
 
 const openIDCfgPath = "/.well-known/openid-configuration"
 
 // Config for new openID validator
 type Config struct {
-	Logger             logrus.FieldLogger
-	Domain             string
-	EvaluationInterval time.Duration
-	RequiredScopes     []string
+	Logger                logrus.FieldLogger
+	Domain                string
+	EvaluationInterval    time.Duration
+	DefaultRequiredScopes []string
 }
 
 // New creates validator which implements access.Validator interface
 // discoveryURI is the uri to the openid discovery document.
 // evaluationInterval is the interval (in minutest) after which the RSAPublicKey
-// will be automatically re-acquired from the discovery source. RequiredScopes is self-explanatory.
+// will be automatically re-acquired from the discovery source.
+// DefaultRequiredScopes is self-explanatory. Will be used in case if requiredScopes were not specified on method call.
 func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator, error) {
 	v := validator{
-		logger:             cfg.Logger,
-		expiresAt:          time.Now().Add(cfg.EvaluationInterval),
-		evaluationInterval: cfg.EvaluationInterval,
-		requiredScopes:     cfg.RequiredScopes,
+		logger:                cfg.Logger,
+		expiresAt:             time.Now().Add(cfg.EvaluationInterval),
+		evaluationInterval:    cfg.EvaluationInterval,
+		defaultRequiredScopes: cfg.DefaultRequiredScopes,
 	}
 
 	if !strings.HasSuffix(cfg.Domain, openIDCfgPath) {
@@ -115,14 +116,13 @@ func (v validator) autoRefreshPublicKey(ctx context.Context, wg *sync.WaitGroup)
 }
 
 // Validates the user token by verifying the signing with the discovery endpoints public key. Then checks the subject. Then checks if the issuer is the same domain as the discovery endpoint.
-// Then checks present scopes against the list of requiredScopes. If all tests pass, the token is valid and the userID, userType, validFlag and err are returned.
-func (v validator) ValidateUserToken(accessToken string) (uint64, uint64, bool, error) {
-	token, scopes, err := v.getJWTAndScopes(accessToken)
+// If requiredScopes is not specified, defaultRequiredScopes which was defined on init will be used.
+// Then checks present scopes against the list of defaultRequiredScopes. If all tests pass, the token is valid and the userID, userType, validFlag and err are returned.
+func (v validator) ValidateUserToken(accessToken string, requiredScopes ...string) (uint64, uint64, bool, error) {
+	token, err := v.GetAndValidateToken(accessToken, requiredScopes...)
 	if err != nil {
 		return 0, 0, false, err
 	}
-
-	audience, _ := token.Claims().Audience()
 
 	// Also get the subject & userType
 	// TODO: proper name for the userType
@@ -138,54 +138,55 @@ func (v validator) ValidateUserToken(accessToken string) (uint64, uint64, bool, 
 		userType = 0
 	}
 
-	// Check if the issuer is from the same domain as the discovery document
-	if issuer, _ := token.Claims().Issuer(); !strings.Contains(v.discoveryURI, issuer) {
-		// Issuer does not match discoveryURI -> Forbidden
-		return sub, userType, false, nil
-	}
-
-	// Check all the requiredScope(s) against the present ones
-	if !checkScope(scopes, v.requiredScopes) {
-		// Required scopes are not all present -> Forbidden
-		return sub, userType, false, nil
-	}
-	if !checkAudience(audience, v.requiredScopes) {
-		// audience was not present -> Forbidden
-		return sub, userType, false, nil
-	}
-
 	// Success
 	return sub, userType, true, nil
 }
 
 // Validates the application token by verifying the signing with the discovery endpoints public key. Then checks if the issuer is the same domain as the discovery endpoint.
-// Then checks present scopes against the list of requiredScopes. If all tests pass, the token is valid and the userID, userType, validFlag and err are returned.
-func (v validator) ValidateApplicationToken(accessToken string) (bool, error) {
-	token, scopes, err := v.getJWTAndScopes(accessToken)
+// If requiredScopes is not specified, defaultRequiredScopes which was defined on init will be used.
+// Then checks present scopes against the list of defaultRequiredScopes. If all tests pass, the token is valid and the userID, userType, validFlag and err are returned.
+func (v validator) ValidateApplicationToken(accessToken string, requiredScopes ...string) (bool, error) {
+	_, err := v.GetAndValidateToken(accessToken, requiredScopes...)
 	if err != nil {
 		return false, err
 	}
 
-	audience, _ := token.Claims().Audience()
+	// Success
+	return true, nil
+}
+
+// GetAndValidateToken validates the application token by verifying the signing with the discovery endpoints public key. Then checks if the issuer is the same domain as the discovery endpoint.
+// Then checks present scopes against the list of defaultRequiredScopes. If all tests pass, the token is valid and the JWT and err are returned.
+func (v validator) GetAndValidateToken(accessToken string, requiredScopes ...string) (jwt.JWT, error) {
+	token, scopes, err := v.getJWTAndScopes(accessToken)
+	if err != nil {
+		return nil, err
+	}
 
 	// Check if the issuer is from the same domain as the discovery document
 	if issuer, _ := token.Claims().Issuer(); !strings.Contains(v.discoveryURI, issuer) {
 		// Issuer does not match discoveryURI -> Forbidden
-		return false, nil
+		return nil, errors.New("issuer does not match discoveryURI")
+	}
+
+	if len(requiredScopes) == 0 {
+		requiredScopes = v.defaultRequiredScopes
 	}
 
 	// Check all the requiredScope(s) against the present ones
-	if !checkScope(scopes, v.requiredScopes) {
+	if !checkScope(scopes, requiredScopes) {
 		// Required scopes are not all present -> Forbidden
-		return false, nil
+		return nil, ErrForbidden
 	}
-	if !checkAudience(audience, v.requiredScopes) {
+
+	audience, _ := token.Claims().Audience()
+	if !checkAudience(audience, requiredScopes) {
 		// audience was not present -> Forbidden
-		return false, nil
+		return nil, errors.New("audience was not present")
 	}
 
 	// Success
-	return true, nil
+	return token, nil
 }
 
 func (v validator) getJWTAndScopes(accessToken string) (jwt.JWT, []string, error) {
@@ -208,12 +209,14 @@ func (v validator) getJWTAndScopes(accessToken string) (jwt.JWT, []string, error
 	}
 
 	// Check for claims, audience and issuer
-	scope := parsedJWT.Claims().Get("scope").([]interface{})
+	scopes := parsedJWT.Claims().Get("scope").([]interface{})
 
 	// convert the scope interfaces to a string slice
-	scopeStrings := make([]string, len(scope))
-	for _, v := range scope {
-		scopeStrings = append(scopeStrings, v.(string))
+	scopeStrings := make([]string, len(scopes))
+	for i, v := range scopes {
+		if scope, ok := v.(string); ok {
+			scopeStrings[i] = scope
+		}
 	}
 
 	return parsedJWT, scopeStrings, nil
@@ -241,17 +244,19 @@ func checkScope(scopes []string, requiredScopes []string) bool {
 }
 
 func checkAudience(audiences []string, wantedAudiences []string) bool {
-	// Recursively check the scope and requiredScopes for matches
-	count := 0
+	// Create set of unique user audiences
+	currentAudiences := make(map[string]struct{}, len(audiences))
 	for _, aud := range audiences {
-		for _, wtaud := range wantedAudiences {
-			if wtaud == aud {
-				count++
-			}
+		currentAudiences[aud] = struct{}{}
+	}
+
+	// Iterating over slice of required audiences. Return true on first found value
+	for _, req := range wantedAudiences {
+		if _, ok := currentAudiences[req]; ok {
+			return true
 		}
 	}
-	// At least one match was found, so the audience is valid
-	return count > 0
+	return false
 }
 
 func (v *validator) CheckRSAExpiration() error {
