@@ -4,7 +4,10 @@ package validatorMock
 
 import "reflect"
 import "crypto/rsa"
-import "github.com/SermoDigital/jose/jwt"
+import (
+	"github.com/24COMS/go.openid/validator"
+	"github.com/SermoDigital/jose/jwt"
+)
 
 // ValidatorCheckRSAExpirationInvocation represents a single call of FakeValidator.CheckRSAExpiration
 type ValidatorCheckRSAExpirationInvocation struct {
@@ -99,6 +102,13 @@ func NewValidatorValidateUserTokenInvocation(accessToken string, requiredScopes 
 	return invocation
 }
 
+// ValidatorGetOpenIDConfigInvocation represents a single call of FakeValidator.GetOpenIDConfig
+type ValidatorGetOpenIDConfigInvocation struct {
+	Results struct {
+		Ident1 access.OpenIDConfig
+	}
+}
+
 // ValidatorTestingT represents the methods of "testing".T used by charlatan Fakes.  It avoids importing the testing package.
 type ValidatorTestingT interface {
 	Error(...interface{})
@@ -137,12 +147,14 @@ type FakeValidator struct {
 	ValidateApplicationTokenHook func(string, ...string) (bool, error)
 	GetAndValidateTokenHook      func(string, ...string) (jwt.JWT, error)
 	ValidateUserTokenHook        func(string, ...string) (uint64, uint64, bool, error)
+	GetOpenIDConfigHook          func() access.OpenIDConfig
 
 	CheckRSAExpirationCalls       []*ValidatorCheckRSAExpirationInvocation
 	GetRSAPubKeysCalls            []*ValidatorGetRSAPubKeysInvocation
 	ValidateApplicationTokenCalls []*ValidatorValidateApplicationTokenInvocation
 	GetAndValidateTokenCalls      []*ValidatorGetAndValidateTokenInvocation
 	ValidateUserTokenCalls        []*ValidatorValidateUserTokenInvocation
+	GetOpenIDConfigCalls          []*ValidatorGetOpenIDConfigInvocation
 }
 
 // NewFakeValidatorDefaultPanic returns an instance of FakeValidator with all hooks configured to panic
@@ -162,6 +174,9 @@ func NewFakeValidatorDefaultPanic() *FakeValidator {
 		},
 		ValidateUserTokenHook: func(string, ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
 			panic("Unexpected call to Validator.ValidateUserToken")
+		},
+		GetOpenIDConfigHook: func() (ident1 access.OpenIDConfig) {
+			panic("Unexpected call to Validator.GetOpenIDConfig")
 		},
 	}
 }
@@ -187,6 +202,10 @@ func NewFakeValidatorDefaultFatal(t_sym1 ValidatorTestingT) *FakeValidator {
 		},
 		ValidateUserTokenHook: func(string, ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
 			t_sym1.Fatal("Unexpected call to Validator.ValidateUserToken")
+			return
+		},
+		GetOpenIDConfigHook: func() (ident1 access.OpenIDConfig) {
+			t_sym1.Fatal("Unexpected call to Validator.GetOpenIDConfig")
 			return
 		},
 	}
@@ -215,6 +234,10 @@ func NewFakeValidatorDefaultError(t_sym2 ValidatorTestingT) *FakeValidator {
 			t_sym2.Error("Unexpected call to Validator.ValidateUserToken")
 			return
 		},
+		GetOpenIDConfigHook: func() (ident1 access.OpenIDConfig) {
+			t_sym2.Error("Unexpected call to Validator.GetOpenIDConfig")
+			return
+		},
 	}
 }
 
@@ -224,6 +247,7 @@ func (f *FakeValidator) Reset() {
 	f.ValidateApplicationTokenCalls = []*ValidatorValidateApplicationTokenInvocation{}
 	f.GetAndValidateTokenCalls = []*ValidatorGetAndValidateTokenInvocation{}
 	f.ValidateUserTokenCalls = []*ValidatorValidateUserTokenInvocation{}
+	f.GetOpenIDConfigCalls = []*ValidatorGetOpenIDConfigInvocation{}
 }
 
 func (f_sym3 *FakeValidator) CheckRSAExpiration() (ident1 error) {
@@ -867,4 +891,78 @@ func (f_sym30 *FakeValidator) ValidateUserTokenResultsForCall(accessToken string
 	}
 
 	return
+}
+
+func (f_sym31 *FakeValidator) GetOpenIDConfig() (ident1 access.OpenIDConfig) {
+	if f_sym31.GetOpenIDConfigHook == nil {
+		panic("Validator.GetOpenIDConfig() called but FakeValidator.GetOpenIDConfigHook is nil")
+	}
+
+	invocation_sym31 := new(ValidatorGetOpenIDConfigInvocation)
+	f_sym31.GetOpenIDConfigCalls = append(f_sym31.GetOpenIDConfigCalls, invocation_sym31)
+
+	ident1 = f_sym31.GetOpenIDConfigHook()
+
+	invocation_sym31.Results.Ident1 = ident1
+
+	return
+}
+
+// SetGetOpenIDConfigStub configures Validator.GetOpenIDConfig to always return the given values
+func (f_sym32 *FakeValidator) SetGetOpenIDConfigStub(ident1 access.OpenIDConfig) {
+	f_sym32.GetOpenIDConfigHook = func() access.OpenIDConfig {
+		return ident1
+	}
+}
+
+// GetOpenIDConfigCalled returns true if FakeValidator.GetOpenIDConfig was called
+func (f *FakeValidator) GetOpenIDConfigCalled() bool {
+	return len(f.GetOpenIDConfigCalls) != 0
+}
+
+// AssertGetOpenIDConfigCalled calls t.Error if FakeValidator.GetOpenIDConfig was not called
+func (f *FakeValidator) AssertGetOpenIDConfigCalled(t ValidatorTestingT) {
+	t.Helper()
+	if len(f.GetOpenIDConfigCalls) == 0 {
+		t.Error("FakeValidator.GetOpenIDConfig not called, expected at least one")
+	}
+}
+
+// GetOpenIDConfigNotCalled returns true if FakeValidator.GetOpenIDConfig was not called
+func (f *FakeValidator) GetOpenIDConfigNotCalled() bool {
+	return len(f.GetOpenIDConfigCalls) == 0
+}
+
+// AssertGetOpenIDConfigNotCalled calls t.Error if FakeValidator.GetOpenIDConfig was called
+func (f *FakeValidator) AssertGetOpenIDConfigNotCalled(t ValidatorTestingT) {
+	t.Helper()
+	if len(f.GetOpenIDConfigCalls) != 0 {
+		t.Error("FakeValidator.GetOpenIDConfig called, expected none")
+	}
+}
+
+// GetOpenIDConfigCalledOnce returns true if FakeValidator.GetOpenIDConfig was called exactly once
+func (f *FakeValidator) GetOpenIDConfigCalledOnce() bool {
+	return len(f.GetOpenIDConfigCalls) == 1
+}
+
+// AssertGetOpenIDConfigCalledOnce calls t.Error if FakeValidator.GetOpenIDConfig was not called exactly once
+func (f *FakeValidator) AssertGetOpenIDConfigCalledOnce(t ValidatorTestingT) {
+	t.Helper()
+	if len(f.GetOpenIDConfigCalls) != 1 {
+		t.Errorf("FakeValidator.GetOpenIDConfig called %d times, expected 1", len(f.GetOpenIDConfigCalls))
+	}
+}
+
+// GetOpenIDConfigCalledN returns true if FakeValidator.GetOpenIDConfig was called at least n times
+func (f *FakeValidator) GetOpenIDConfigCalledN(n int) bool {
+	return len(f.GetOpenIDConfigCalls) >= n
+}
+
+// AssertGetOpenIDConfigCalledN calls t.Error if FakeValidator.GetOpenIDConfig was called less than n times
+func (f *FakeValidator) AssertGetOpenIDConfigCalledN(t ValidatorTestingT, n int) {
+	t.Helper()
+	if len(f.GetOpenIDConfigCalls) < n {
+		t.Errorf("FakeValidator.GetOpenIDConfig called %d times, expected >= %d", len(f.GetOpenIDConfigCalls), n)
+	}
 }

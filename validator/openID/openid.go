@@ -25,12 +25,15 @@ import (
 
 // validator struct implements openID validator
 type validator struct {
+	lastConfig            access.OpenIDConfig
 	discoveryURI          string
 	RSAPubKey             *rsa.PublicKey
 	expiresAt             time.Time
 	evaluationInterval    time.Duration
 	defaultRequiredScopes []string
-	logger                logrus.FieldLogger
+
+	logger logrus.FieldLogger
+	mu     *sync.RWMutex
 }
 
 const openIDCfgPath = "/.well-known/openid-configuration"
@@ -50,8 +53,8 @@ type Config struct {
 // DefaultRequiredScopes is self-explanatory. Will be used in case if requiredScopes were not specified on method call.
 func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator, error) {
 	v := validator{
+		mu:                    &sync.RWMutex{},
 		logger:                cfg.Logger,
-		expiresAt:             time.Now().Add(cfg.EvaluationInterval),
 		evaluationInterval:    cfg.EvaluationInterval,
 		defaultRequiredScopes: cfg.DefaultRequiredScopes,
 	}
@@ -62,16 +65,10 @@ func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator,
 
 	v.discoveryURI = cfg.Domain
 
-	//first get the pemBytes from the discovery endpoint
-	data, err := v.getPublicKeyCertificate(v.discoveryURI)
+	// With empty v.expiresAt it will get new key and set v.expiresAt
+	err := v.CheckRSAExpiration()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get Public Key Certificate")
-	}
-
-	// From those data, parse the public key
-	v.RSAPubKey, err = crypto.ParseRSAPublicKeyFromPEM(data)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to Parse RSA public key")
+		return nil, errors.Wrap(err, "failed to get public key")
 	}
 
 	//Print everything, for debugging
@@ -94,7 +91,7 @@ func (v validator) autoRefreshPublicKey(ctx context.Context, wg *sync.WaitGroup)
 	wg.Add(1)
 	go func() {
 		// -1 minute to be sure that token was re-acquired before expiration
-		ticker := time.NewTicker(v.evaluationInterval - 1)
+		ticker := time.NewTicker(v.evaluationInterval - time.Minute)
 		defer func() {
 			ticker.Stop()
 			wg.Done()
@@ -190,12 +187,6 @@ func (v validator) GetAndValidateToken(accessToken string, requiredScopes ...str
 }
 
 func (v validator) getJWTAndScopes(accessToken string) (jwt.JWT, []string, error) {
-	//Check if the current RSAPubKey is still valid and has not expired.
-	err := v.CheckRSAExpiration()
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to checkRSAExpiration")
-	}
-
 	// Parse the accesstoken as JWT token
 	parsedJWT, err := jws.ParseJWT([]byte(accessToken))
 	if err != nil {
@@ -262,10 +253,17 @@ func checkAudience(audiences []string, wantedAudiences []string) bool {
 func (v *validator) CheckRSAExpiration() error {
 	// Check if the expiresAt is in the past
 	if time.Now().After(v.expiresAt) {
-		v.logger.Info("RSAPublicKey is expired, get a new one from the discoveryURI")
+		v.mu.Lock()
+		defer v.mu.Unlock()
 
+		v.logger.Info("getting a new RSAPublicKey")
+
+		err := v.updateOpenIDConfig()
+		if err != nil {
+			return errors.Wrap(err, "failed to update openID configuration")
+		}
 		//first get the pemBytes from the discovery endpoint
-		data, err := v.getPublicKeyCertificate(v.discoveryURI)
+		data, err := v.getPublicKeyCertificate()
 		if err != nil {
 			v.logger.Info("Failed getPublicKeyCertificate()")
 			return err
@@ -285,47 +283,61 @@ func (v *validator) CheckRSAExpiration() error {
 	return nil
 }
 
-func (v validator) GetRSAPubKeys() []*rsa.PublicKey {
-	return []*rsa.PublicKey{v.RSAPubKey}
-}
-
-// Get the OpenIdconfiguration based on the baseUri, then get the publickey from jwks. Return []byte containing the PEM-bytes
-func (v validator) getPublicKeyCertificate(discoveryURI string) ([]byte, error) {
+func (v *validator) updateOpenIDConfig() error {
 	// First get the openidconfiguration from the .well-known endpoint
-	req, err := http.NewRequest("GET", discoveryURI, nil)
+	req, err := http.NewRequest("GET", v.discoveryURI, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() {
 		err = resp.Body.Close()
 		if err != nil {
-			v.logger.Warn(errors.Wrap(err, "failed to close body after call "+discoveryURI))
+			v.logger.Warn(errors.Wrap(err, "failed to close body after call "+v.discoveryURI))
 		}
 	}()
 
 	// Fill the record with the data from the JSON
 	// Note: JSON returned is always an array, even when its a single object
-	var openIDConfig OpenIDConfig
+	var openIDConfig access.OpenIDConfig
 
 	// Use json.Decode for reading streams of JSON data
 	err = json.NewDecoder(resp.Body).Decode(&openIDConfig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
+	v.lastConfig = openIDConfig
+	return nil
+}
+
+func (v *validator) GetRSAPubKeys() []*rsa.PublicKey {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	return []*rsa.PublicKey{v.RSAPubKey}
+}
+
+func (v *validator) GetOpenIDConfig() access.OpenIDConfig {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	return v.lastConfig
+}
+
+// Get the OpenIdconfiguration based on the baseUri, then get the publickey from jwks. Return []byte containing the PEM-bytes
+func (v *validator) getPublicKeyCertificate() ([]byte, error) {
 	// Then use the JwksUri to get the JWKS values
-	req, err = http.NewRequest("GET", openIDConfig.JwksURI, nil)
+	req, err := http.NewRequest("GET", v.lastConfig.JwksURI, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err = client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +350,7 @@ func (v validator) getPublicKeyCertificate(discoveryURI string) ([]byte, error) 
 
 	// Fill the record with the data from the JSON
 	// Note: JSON returned is always an array, even when its a single object
-	var jwksValues JWKS
+	var jwksValues access.JWKS
 
 	// Use json.Decode for reading streams of JSON data
 	err = json.NewDecoder(resp.Body).Decode(&jwksValues)
