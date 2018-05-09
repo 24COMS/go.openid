@@ -1,4 +1,4 @@
-package openidvalidator
+package access
 
 // OpenIDConfig Type used to deserialize the OpenId configuration
 type OpenIDConfig struct {

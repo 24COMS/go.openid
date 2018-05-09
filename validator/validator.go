@@ -15,4 +15,5 @@ type Validator interface {
 	ValidateApplicationToken(accessToken string, requiredScopes ...string) (bool, error)
 	GetAndValidateToken(accessToken string, requiredScopes ...string) (jwt.JWT, error)
 	ValidateUserToken(accessToken string, requiredScopes ...string) (uint64, uint64, bool, error)
+	GetOpenIDConfig() OpenIDConfig
 }
