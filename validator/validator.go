@@ -10,7 +10,7 @@ import (
 
 // Validator describes common interface for all permission validators
 type Validator interface {
-	CheckRSAExpiration() error
+	UpdateKeys() error
 	GetRSAPubKeys() []*rsa.PublicKey
 	ValidateApplicationToken(accessToken string, requiredScopes ...string) (bool, error)
 	GetAndValidateToken(accessToken string, requiredScopes ...string) (jwt.JWT, error)

@@ -9,8 +9,8 @@ import (
 	"github.com/SermoDigital/jose/jwt"
 )
 
-// ValidatorCheckRSAExpirationInvocation represents a single call of FakeValidator.CheckRSAExpiration
-type ValidatorCheckRSAExpirationInvocation struct {
+// ValidatorUpdateKeysInvocation represents a single call of FakeValidator.UpdateKeys
+type ValidatorUpdateKeysInvocation struct {
 	Results struct {
 		Ident1 error
 	}
@@ -125,7 +125,7 @@ Use it in your tests as in this example:
 
 	func TestWithValidator(t *testing.T) {
 		f := &validatorMock.FakeValidator{
-			CheckRSAExpirationHook: func() (ident1 error) {
+			UpdateKeysHook: func() (ident1 error) {
 				// ensure parameters meet expections, signal errors using t, etc
 				return
 			},
@@ -133,23 +133,23 @@ Use it in your tests as in this example:
 
 		// test code goes here ...
 
-		// assert state of FakeCheckRSAExpiration ...
-		f.AssertCheckRSAExpirationCalledOnce(t)
+		// assert state of FakeUpdateKeys ...
+		f.AssertUpdateKeysCalledOnce(t)
 	}
 
 Create anonymous function implementations for only those interface methods that
 should be called in the code under test.  This will force a panic if any
-unexpected calls are made to FakeCheckRSAExpiration.
+unexpected calls are made to FakeUpdateKeys.
 */
 type FakeValidator struct {
-	CheckRSAExpirationHook       func() error
+	UpdateKeysHook               func() error
 	GetRSAPubKeysHook            func() []*rsa.PublicKey
 	ValidateApplicationTokenHook func(string, ...string) (bool, error)
 	GetAndValidateTokenHook      func(string, ...string) (jwt.JWT, error)
 	ValidateUserTokenHook        func(string, ...string) (uint64, uint64, bool, error)
 	GetOpenIDConfigHook          func() access.OpenIDConfig
 
-	CheckRSAExpirationCalls       []*ValidatorCheckRSAExpirationInvocation
+	UpdateKeysCalls               []*ValidatorUpdateKeysInvocation
 	GetRSAPubKeysCalls            []*ValidatorGetRSAPubKeysInvocation
 	ValidateApplicationTokenCalls []*ValidatorValidateApplicationTokenInvocation
 	GetAndValidateTokenCalls      []*ValidatorGetAndValidateTokenInvocation
@@ -160,8 +160,8 @@ type FakeValidator struct {
 // NewFakeValidatorDefaultPanic returns an instance of FakeValidator with all hooks configured to panic
 func NewFakeValidatorDefaultPanic() *FakeValidator {
 	return &FakeValidator{
-		CheckRSAExpirationHook: func() (ident1 error) {
-			panic("Unexpected call to Validator.CheckRSAExpiration")
+		UpdateKeysHook: func() (ident1 error) {
+			panic("Unexpected call to Validator.UpdateKeys")
 		},
 		GetRSAPubKeysHook: func() (ident1 []*rsa.PublicKey) {
 			panic("Unexpected call to Validator.GetRSAPubKeys")
@@ -184,8 +184,8 @@ func NewFakeValidatorDefaultPanic() *FakeValidator {
 // NewFakeValidatorDefaultFatal returns an instance of FakeValidator with all hooks configured to call t.Fatal
 func NewFakeValidatorDefaultFatal(t_sym1 ValidatorTestingT) *FakeValidator {
 	return &FakeValidator{
-		CheckRSAExpirationHook: func() (ident1 error) {
-			t_sym1.Fatal("Unexpected call to Validator.CheckRSAExpiration")
+		UpdateKeysHook: func() (ident1 error) {
+			t_sym1.Fatal("Unexpected call to Validator.UpdateKeys")
 			return
 		},
 		GetRSAPubKeysHook: func() (ident1 []*rsa.PublicKey) {
@@ -214,8 +214,8 @@ func NewFakeValidatorDefaultFatal(t_sym1 ValidatorTestingT) *FakeValidator {
 // NewFakeValidatorDefaultError returns an instance of FakeValidator with all hooks configured to call t.Error
 func NewFakeValidatorDefaultError(t_sym2 ValidatorTestingT) *FakeValidator {
 	return &FakeValidator{
-		CheckRSAExpirationHook: func() (ident1 error) {
-			t_sym2.Error("Unexpected call to Validator.CheckRSAExpiration")
+		UpdateKeysHook: func() (ident1 error) {
+			t_sym2.Error("Unexpected call to Validator.UpdateKeys")
 			return
 		},
 		GetRSAPubKeysHook: func() (ident1 []*rsa.PublicKey) {
@@ -242,7 +242,7 @@ func NewFakeValidatorDefaultError(t_sym2 ValidatorTestingT) *FakeValidator {
 }
 
 func (f *FakeValidator) Reset() {
-	f.CheckRSAExpirationCalls = []*ValidatorCheckRSAExpirationInvocation{}
+	f.UpdateKeysCalls = []*ValidatorUpdateKeysInvocation{}
 	f.GetRSAPubKeysCalls = []*ValidatorGetRSAPubKeysInvocation{}
 	f.ValidateApplicationTokenCalls = []*ValidatorValidateApplicationTokenInvocation{}
 	f.GetAndValidateTokenCalls = []*ValidatorGetAndValidateTokenInvocation{}
@@ -250,77 +250,77 @@ func (f *FakeValidator) Reset() {
 	f.GetOpenIDConfigCalls = []*ValidatorGetOpenIDConfigInvocation{}
 }
 
-func (f_sym3 *FakeValidator) CheckRSAExpiration() (ident1 error) {
-	if f_sym3.CheckRSAExpirationHook == nil {
-		panic("Validator.CheckRSAExpiration() called but FakeValidator.CheckRSAExpirationHook is nil")
+func (f_sym3 *FakeValidator) UpdateKeys() (ident1 error) {
+	if f_sym3.UpdateKeysHook == nil {
+		panic("Validator.UpdateKeys() called but FakeValidator.UpdateKeysHook is nil")
 	}
 
-	invocation_sym3 := new(ValidatorCheckRSAExpirationInvocation)
-	f_sym3.CheckRSAExpirationCalls = append(f_sym3.CheckRSAExpirationCalls, invocation_sym3)
+	invocation_sym3 := new(ValidatorUpdateKeysInvocation)
+	f_sym3.UpdateKeysCalls = append(f_sym3.UpdateKeysCalls, invocation_sym3)
 
-	ident1 = f_sym3.CheckRSAExpirationHook()
+	ident1 = f_sym3.UpdateKeysHook()
 
 	invocation_sym3.Results.Ident1 = ident1
 
 	return
 }
 
-// SetCheckRSAExpirationStub configures Validator.CheckRSAExpiration to always return the given values
-func (f_sym4 *FakeValidator) SetCheckRSAExpirationStub(ident1 error) {
-	f_sym4.CheckRSAExpirationHook = func() error {
+// SetUpdateKeysStub configures Validator.UpdateKeys to always return the given values
+func (f_sym4 *FakeValidator) SetUpdateKeysStub(ident1 error) {
+	f_sym4.UpdateKeysHook = func() error {
 		return ident1
 	}
 }
 
-// CheckRSAExpirationCalled returns true if FakeValidator.CheckRSAExpiration was called
-func (f *FakeValidator) CheckRSAExpirationCalled() bool {
-	return len(f.CheckRSAExpirationCalls) != 0
+// UpdateKeysCalled returns true if FakeValidator.UpdateKeys was called
+func (f *FakeValidator) UpdateKeysCalled() bool {
+	return len(f.UpdateKeysCalls) != 0
 }
 
-// AssertCheckRSAExpirationCalled calls t.Error if FakeValidator.CheckRSAExpiration was not called
-func (f *FakeValidator) AssertCheckRSAExpirationCalled(t ValidatorTestingT) {
+// AssertUpdateKeysCalled calls t.Error if FakeValidator.UpdateKeys was not called
+func (f *FakeValidator) AssertUpdateKeysCalled(t ValidatorTestingT) {
 	t.Helper()
-	if len(f.CheckRSAExpirationCalls) == 0 {
-		t.Error("FakeValidator.CheckRSAExpiration not called, expected at least one")
+	if len(f.UpdateKeysCalls) == 0 {
+		t.Error("FakeValidator.UpdateKeys not called, expected at least one")
 	}
 }
 
-// CheckRSAExpirationNotCalled returns true if FakeValidator.CheckRSAExpiration was not called
-func (f *FakeValidator) CheckRSAExpirationNotCalled() bool {
-	return len(f.CheckRSAExpirationCalls) == 0
+// UpdateKeysNotCalled returns true if FakeValidator.UpdateKeys was not called
+func (f *FakeValidator) UpdateKeysNotCalled() bool {
+	return len(f.UpdateKeysCalls) == 0
 }
 
-// AssertCheckRSAExpirationNotCalled calls t.Error if FakeValidator.CheckRSAExpiration was called
-func (f *FakeValidator) AssertCheckRSAExpirationNotCalled(t ValidatorTestingT) {
+// AssertUpdateKeysNotCalled calls t.Error if FakeValidator.UpdateKeys was called
+func (f *FakeValidator) AssertUpdateKeysNotCalled(t ValidatorTestingT) {
 	t.Helper()
-	if len(f.CheckRSAExpirationCalls) != 0 {
-		t.Error("FakeValidator.CheckRSAExpiration called, expected none")
+	if len(f.UpdateKeysCalls) != 0 {
+		t.Error("FakeValidator.UpdateKeys called, expected none")
 	}
 }
 
-// CheckRSAExpirationCalledOnce returns true if FakeValidator.CheckRSAExpiration was called exactly once
-func (f *FakeValidator) CheckRSAExpirationCalledOnce() bool {
-	return len(f.CheckRSAExpirationCalls) == 1
+// UpdateKeysCalledOnce returns true if FakeValidator.UpdateKeys was called exactly once
+func (f *FakeValidator) UpdateKeysCalledOnce() bool {
+	return len(f.UpdateKeysCalls) == 1
 }
 
-// AssertCheckRSAExpirationCalledOnce calls t.Error if FakeValidator.CheckRSAExpiration was not called exactly once
-func (f *FakeValidator) AssertCheckRSAExpirationCalledOnce(t ValidatorTestingT) {
+// AssertUpdateKeysCalledOnce calls t.Error if FakeValidator.UpdateKeys was not called exactly once
+func (f *FakeValidator) AssertUpdateKeysCalledOnce(t ValidatorTestingT) {
 	t.Helper()
-	if len(f.CheckRSAExpirationCalls) != 1 {
-		t.Errorf("FakeValidator.CheckRSAExpiration called %d times, expected 1", len(f.CheckRSAExpirationCalls))
+	if len(f.UpdateKeysCalls) != 1 {
+		t.Errorf("FakeValidator.UpdateKeys called %d times, expected 1", len(f.UpdateKeysCalls))
 	}
 }
 
-// CheckRSAExpirationCalledN returns true if FakeValidator.CheckRSAExpiration was called at least n times
-func (f *FakeValidator) CheckRSAExpirationCalledN(n int) bool {
-	return len(f.CheckRSAExpirationCalls) >= n
+// UpdateKeysCalledN returns true if FakeValidator.UpdateKeys was called at least n times
+func (f *FakeValidator) UpdateKeysCalledN(n int) bool {
+	return len(f.UpdateKeysCalls) >= n
 }
 
-// AssertCheckRSAExpirationCalledN calls t.Error if FakeValidator.CheckRSAExpiration was called less than n times
-func (f *FakeValidator) AssertCheckRSAExpirationCalledN(t ValidatorTestingT, n int) {
+// AssertUpdateKeysCalledN calls t.Error if FakeValidator.UpdateKeys was called less than n times
+func (f *FakeValidator) AssertUpdateKeysCalledN(t ValidatorTestingT, n int) {
 	t.Helper()
-	if len(f.CheckRSAExpirationCalls) < n {
-		t.Errorf("FakeValidator.CheckRSAExpiration called %d times, expected >= %d", len(f.CheckRSAExpirationCalls), n)
+	if len(f.UpdateKeysCalls) < n {
+		t.Errorf("FakeValidator.UpdateKeys called %d times, expected >= %d", len(f.UpdateKeysCalls), n)
 	}
 }
 

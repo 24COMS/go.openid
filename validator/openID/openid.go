@@ -7,13 +7,14 @@ package openidvalidator
 import (
 	"bytes"
 	"context"
-	"crypto/rsa"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"crypto/rsa"
 
 	"github.com/24COMS/go.openid/validator"
 	"github.com/SermoDigital/jose/crypto"
@@ -27,8 +28,7 @@ import (
 type validator struct {
 	lastConfig            access.OpenIDConfig
 	discoveryURI          string
-	RSAPubKey             *rsa.PublicKey
-	expiresAt             time.Time
+	rsaPubKeys            []*rsa.PublicKey
 	evaluationInterval    time.Duration
 	defaultRequiredScopes []string
 
@@ -66,17 +66,15 @@ func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator,
 	v.discoveryURI = cfg.Domain
 
 	// With empty v.expiresAt it will get new key and set v.expiresAt
-	err := v.CheckRSAExpiration()
+	err := v.UpdateKeys()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get public key")
 	}
 
 	//Print everything, for debugging
 	v.logger.Debugf(
-		"Uri:%s\nPubKey:%T\nexpiresAt:%s\nevaluationInterval:%d\n",
-		v.discoveryURI, v.RSAPubKey,
-		v.expiresAt.UTC().Format(time.UnixDate),
-		v.evaluationInterval,
+		"Uri:%s\nevaluationInterval:%d\nPubKeys:%T\n",
+		v.discoveryURI, v.evaluationInterval, v.rsaPubKeys,
 	)
 
 	//Start the refresh cycle
@@ -87,7 +85,7 @@ func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator,
 }
 
 //Refreshes the public key after the interval has passed. If it has already been refreshed in the mean-time, don't refresh it.
-func (v validator) autoRefreshPublicKey(ctx context.Context, wg *sync.WaitGroup) error {
+func (v *validator) autoRefreshPublicKey(ctx context.Context, wg *sync.WaitGroup) error {
 	wg.Add(1)
 	go func() {
 		// -1 minute to be sure that token was re-acquired before expiration
@@ -102,7 +100,7 @@ func (v validator) autoRefreshPublicKey(ctx context.Context, wg *sync.WaitGroup)
 				return
 			case <-ticker.C:
 				// Check if key should be refreshed
-				err := v.CheckRSAExpiration()
+				err := v.UpdateKeys()
 				if err != nil {
 					v.logger.Error(errors.Wrap(err, "failed to refresh public key"))
 				}
@@ -193,14 +191,24 @@ func (v validator) getJWTAndScopes(accessToken string) (jwt.JWT, []string, error
 		return nil, nil, errors.Wrap(err, "failed to Parse JWT token")
 	}
 
+	var valid bool
 	// Validate token
-	if err = parsedJWT.Validate(v.RSAPubKey, crypto.SigningMethodRS256); err != nil {
-		// The signing of the token was not valid -> Unauthorized
-		return nil, nil, errors.Wrap(err, "failed to Validate JWT")
+	for _, key := range v.rsaPubKeys {
+		if err = parsedJWT.Validate(key, crypto.SigningMethodRS256); err != nil {
+			v.logger.Debug(errors.Wrap(err, "failed to validate JWT"))
+			continue
+		}
+		valid = true
+	}
+	if !valid {
+		return nil, nil, errors.Wrap(err, "failed to validate JWT")
 	}
 
 	// Check for claims, audience and issuer
-	scopes := parsedJWT.Claims().Get("scope").([]interface{})
+	scopes, ok := parsedJWT.Claims().Get("scope").([]interface{})
+	if !ok {
+		return nil, nil, errors.New("failed to parse JWT scope")
+	}
 
 	// convert the scope interfaces to a string slice
 	scopeStrings := make([]string, len(scopes))
@@ -250,36 +258,42 @@ func checkAudience(audiences []string, wantedAudiences []string) bool {
 	return false
 }
 
-func (v *validator) CheckRSAExpiration() error {
-	// Check if the expiresAt is in the past
-	if time.Now().After(v.expiresAt) {
-		v.mu.Lock()
-		defer v.mu.Unlock()
+type keyType string
 
-		v.logger.Info("getting a new RSAPublicKey")
+const (
+	rsaKey keyType = "RSA"
+)
 
-		err := v.updateOpenIDConfig()
-		if err != nil {
-			return errors.Wrap(err, "failed to update openID configuration")
-		}
-		//first get the pemBytes from the discovery endpoint
-		data, err := v.getPublicKeyCertificate()
-		if err != nil {
-			v.logger.Info("Failed getPublicKeyCertificate()")
-			return err
-		}
+func (v *validator) UpdateKeys() error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 
-		// From those data, parse the public key
-		v.RSAPubKey, err = crypto.ParseRSAPublicKeyFromPEM(data)
+	v.logger.Info("getting a new RSAPublicKey")
+
+	err := v.updateOpenIDConfig()
+	if err != nil {
+		return errors.Wrap(err, "failed to update openID configuration")
+	}
+	//first get the pemBytes from the discovery endpoint
+	keysMap, err := v.getPublicKeyCertificates()
+	if err != nil {
+		v.logger.Info("failed to get public key certificate")
+		return err
+	}
+
+	// From those keysMap, parse public RSA keys
+	if len(keysMap[rsaKey]) != 0 {
+		v.rsaPubKeys = nil
+	}
+	for _, key := range keysMap[rsaKey] {
+		pubKey, err := crypto.ParseRSAPublicKeyFromPEM(key)
 		if err != nil {
 			return errors.Wrap(err, "failed to Parse RSA public key")
 		}
-		v.logger.Info("New PublicKey retrieved from discovery endpoint.")
 
-		// Now reset the expiresAt (expiration) timestamp
-		v.expiresAt = time.Now().Add(v.evaluationInterval)
-
+		v.rsaPubKeys = append(v.rsaPubKeys, pubKey)
 	}
+	v.logger.Info("new PublicKeys retrieved from discovery endpoint")
 	return nil
 }
 
@@ -319,7 +333,7 @@ func (v *validator) GetRSAPubKeys() []*rsa.PublicKey {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
-	return []*rsa.PublicKey{v.RSAPubKey}
+	return v.rsaPubKeys
 }
 
 func (v *validator) GetOpenIDConfig() access.OpenIDConfig {
@@ -330,7 +344,7 @@ func (v *validator) GetOpenIDConfig() access.OpenIDConfig {
 }
 
 // Get the OpenIdconfiguration based on the baseUri, then get the publickey from jwks. Return []byte containing the PEM-bytes
-func (v *validator) getPublicKeyCertificate() ([]byte, error) {
+func (v *validator) getPublicKeyCertificates() (map[keyType][][]byte, error) {
 	// Then use the JwksUri to get the JWKS values
 	req, err := http.NewRequest("GET", v.lastConfig.JwksURI, nil)
 	if err != nil {
@@ -358,12 +372,26 @@ func (v *validator) getPublicKeyCertificate() ([]byte, error) {
 		return nil, err
 	}
 
-	// Return the X5C (certificate) of the key first Key
-	// TODO: Make it select proper key depending on x5t and kid
-	//Change DER to PEM formatted
-	b := bytes.Buffer{}
-	b.WriteString("-----BEGIN CERTIFICATE-----\n")
-	b.WriteString(jwksValues.Keys[0].X5C[0])
-	b.WriteString("\n-----END CERTIFICATE-----\n")
-	return b.Bytes(), nil
+	// Return the X5C certificates
+	buf := bytes.Buffer{}
+	keysMap := make(map[keyType][][]byte, len(jwksValues.Keys))
+	KIDs := make(map[string]struct{})
+	for _, key := range jwksValues.Keys {
+		if _, ok := KIDs[key.Kid]; ok {
+			continue
+		}
+
+		// Change DER to PEM formatted
+		buf.WriteString("-----BEGIN CERTIFICATE-----\n")
+		// Taking only first certificate from chain
+		buf.WriteString(key.X5C[0])
+		buf.WriteString("\n-----END CERTIFICATE-----\n")
+
+		// Storing keys by types
+		keysMap[keyType(key.Kty)] = append(keysMap[keyType(key.Kty)], buf.Bytes())
+
+		buf.Reset()
+		KIDs[key.Kid] = struct{}{}
+	}
+	return keysMap, nil
 }
