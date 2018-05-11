@@ -7,14 +7,13 @@ package openidvalidator
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"crypto/rsa"
 
 	"github.com/24COMS/go.openid/validator"
 	"github.com/SermoDigital/jose/crypto"
