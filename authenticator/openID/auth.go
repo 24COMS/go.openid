@@ -23,6 +23,7 @@ type Config struct {
 	// Other fields could be added for different grant types
 	ClientID     string
 	ClientSecret string
+	Audience     string
 }
 
 type grantType string
@@ -45,6 +46,7 @@ func New(cfg Config) (authenticator.Authenticator, error) {
 		grantType:    string(cfg.GrantType),
 		clientID:     cfg.ClientID,
 		clientSecret: cfg.ClientSecret,
+		audience:     cfg.Audience,
 
 		validator: cfg.Validator,
 		logger:    cfg.Logger,
@@ -57,6 +59,7 @@ type auth struct {
 	grantType    string
 	clientID     string
 	clientSecret string
+	audience     string
 
 	validator access.Validator
 	logger    logrus.FieldLogger
@@ -90,6 +93,10 @@ func (a *auth) GetToken(scope string) (string, error) {
 		"client_id":     []string{a.clientID},
 		"client_secret": []string{a.clientSecret},
 		"scope":         []string{scope},
+	}
+
+	if a.audience != "" {
+		data.Add("audience", a.audience)
 	}
 
 	resp, err := http.Post(endpoint, contentType, strings.NewReader(data.Encode()))

@@ -2,9 +2,9 @@
 package validatorMock
 
 import (
-	"reflect"
 	"github.com/SermoDigital/jose/crypto"
 	"github.com/SermoDigital/jose/jwt"
+	"reflect"
 )
 
 // JWTClaimsInvocation represents a single call of FakeJWT.Claims
@@ -557,4 +557,3 @@ func (f_sym20 *FakeJWT) SerializeResultsForCall(key interface{}) (ident1 []byte,
 
 	return
 }
-
