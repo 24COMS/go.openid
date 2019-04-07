@@ -2,6 +2,7 @@ package access
 
 import (
 	"crypto/rsa"
+	"io"
 
 	"github.com/SermoDigital/jose/jwt"
 )
@@ -10,6 +11,7 @@ import (
 
 // Validator describes common interface for all permission validators
 type Validator interface {
+	io.Closer
 	UpdateKeys() error
 	GetRSAPubKeys() []*rsa.PublicKey
 	ValidateApplicationToken(accessToken string, requiredScopes ...string) (bool, error)

@@ -33,6 +33,9 @@ type validator struct {
 
 	logger logrus.FieldLogger
 	mu     *sync.RWMutex
+
+	cancel context.CancelFunc
+	wg     *sync.WaitGroup
 }
 
 const openIDCfgPath = "/.well-known/openid-configuration"
@@ -56,6 +59,7 @@ func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator,
 		logger:                cfg.Logger,
 		evaluationInterval:    cfg.EvaluationInterval,
 		defaultRequiredScopes: cfg.DefaultRequiredScopes,
+		wg:                    wg,
 	}
 
 	if !strings.HasSuffix(cfg.Domain, openIDCfgPath) {
@@ -76,6 +80,7 @@ func New(ctx context.Context, wg *sync.WaitGroup, cfg Config) (access.Validator,
 		v.discoveryURI, v.evaluationInterval, v.rsaPubKeys,
 	)
 
+	ctx, v.cancel = context.WithCancel(ctx)
 	//Start the refresh cycle
 	err = v.autoRefreshPublicKey(ctx, wg)
 
@@ -106,6 +111,12 @@ func (v *validator) autoRefreshPublicKey(ctx context.Context, wg *sync.WaitGroup
 			}
 		}
 	}()
+	return nil
+}
+
+func (v validator) Close() error {
+	v.cancel()
+	v.wg.Wait()
 	return nil
 }
 
