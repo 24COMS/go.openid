@@ -2,12 +2,20 @@
 
 package validatorMock
 
-import "reflect"
-import "crypto/rsa"
 import (
-	"github.com/24COMS/go.openid/validator"
-	"github.com/SermoDigital/jose/jwt"
+	access "github.com/24COMS/go.openid/validator"
+	"reflect"
 )
+import "crypto/rsa"
+
+import "github.com/SermoDigital/jose/jwt"
+
+// ValidatorCloseInvocation represents a single call of FakeValidator.Close
+type ValidatorCloseInvocation struct {
+	Results struct {
+		Ident7 error
+	}
+}
 
 // ValidatorUpdateKeysInvocation represents a single call of FakeValidator.UpdateKeys
 type ValidatorUpdateKeysInvocation struct {
@@ -125,7 +133,7 @@ Use it in your tests as in this example:
 
 	func TestWithValidator(t *testing.T) {
 		f := &validatorMock.FakeValidator{
-			UpdateKeysHook: func() (ident1 error) {
+			CloseHook: func() (ident7 error) {
 				// ensure parameters meet expections, signal errors using t, etc
 				return
 			},
@@ -133,15 +141,16 @@ Use it in your tests as in this example:
 
 		// test code goes here ...
 
-		// assert state of FakeUpdateKeys ...
-		f.AssertUpdateKeysCalledOnce(t)
+		// assert state of FakeClose ...
+		f.AssertCloseCalledOnce(t)
 	}
 
 Create anonymous function implementations for only those interface methods that
 should be called in the code under test.  This will force a panic if any
-unexpected calls are made to FakeUpdateKeys.
+unexpected calls are made to FakeClose.
 */
 type FakeValidator struct {
+	CloseHook                    func() error
 	UpdateKeysHook               func() error
 	GetRSAPubKeysHook            func() []*rsa.PublicKey
 	ValidateApplicationTokenHook func(string, ...string) (bool, error)
@@ -149,6 +158,7 @@ type FakeValidator struct {
 	ValidateUserTokenHook        func(string, ...string) (uint64, uint64, bool, error)
 	GetOpenIDConfigHook          func() access.OpenIDConfig
 
+	CloseCalls                    []*ValidatorCloseInvocation
 	UpdateKeysCalls               []*ValidatorUpdateKeysInvocation
 	GetRSAPubKeysCalls            []*ValidatorGetRSAPubKeysInvocation
 	ValidateApplicationTokenCalls []*ValidatorValidateApplicationTokenInvocation
@@ -160,6 +170,9 @@ type FakeValidator struct {
 // NewFakeValidatorDefaultPanic returns an instance of FakeValidator with all hooks configured to panic
 func NewFakeValidatorDefaultPanic() *FakeValidator {
 	return &FakeValidator{
+		CloseHook: func() (ident7 error) {
+			panic("Unexpected call to Validator.Close")
+		},
 		UpdateKeysHook: func() (ident1 error) {
 			panic("Unexpected call to Validator.UpdateKeys")
 		},
@@ -184,6 +197,10 @@ func NewFakeValidatorDefaultPanic() *FakeValidator {
 // NewFakeValidatorDefaultFatal returns an instance of FakeValidator with all hooks configured to call t.Fatal
 func NewFakeValidatorDefaultFatal(t_sym1 ValidatorTestingT) *FakeValidator {
 	return &FakeValidator{
+		CloseHook: func() (ident7 error) {
+			t_sym1.Fatal("Unexpected call to Validator.Close")
+			return
+		},
 		UpdateKeysHook: func() (ident1 error) {
 			t_sym1.Fatal("Unexpected call to Validator.UpdateKeys")
 			return
@@ -214,6 +231,10 @@ func NewFakeValidatorDefaultFatal(t_sym1 ValidatorTestingT) *FakeValidator {
 // NewFakeValidatorDefaultError returns an instance of FakeValidator with all hooks configured to call t.Error
 func NewFakeValidatorDefaultError(t_sym2 ValidatorTestingT) *FakeValidator {
 	return &FakeValidator{
+		CloseHook: func() (ident7 error) {
+			t_sym2.Error("Unexpected call to Validator.Close")
+			return
+		},
 		UpdateKeysHook: func() (ident1 error) {
 			t_sym2.Error("Unexpected call to Validator.UpdateKeys")
 			return
@@ -242,6 +263,7 @@ func NewFakeValidatorDefaultError(t_sym2 ValidatorTestingT) *FakeValidator {
 }
 
 func (f *FakeValidator) Reset() {
+	f.CloseCalls = []*ValidatorCloseInvocation{}
 	f.UpdateKeysCalls = []*ValidatorUpdateKeysInvocation{}
 	f.GetRSAPubKeysCalls = []*ValidatorGetRSAPubKeysInvocation{}
 	f.ValidateApplicationTokenCalls = []*ValidatorValidateApplicationTokenInvocation{}
@@ -250,24 +272,98 @@ func (f *FakeValidator) Reset() {
 	f.GetOpenIDConfigCalls = []*ValidatorGetOpenIDConfigInvocation{}
 }
 
-func (f_sym3 *FakeValidator) UpdateKeys() (ident1 error) {
-	if f_sym3.UpdateKeysHook == nil {
+func (f_sym3 *FakeValidator) Close() (ident7 error) {
+	if f_sym3.CloseHook == nil {
+		panic("Validator.Close() called but FakeValidator.CloseHook is nil")
+	}
+
+	invocation_sym3 := new(ValidatorCloseInvocation)
+	f_sym3.CloseCalls = append(f_sym3.CloseCalls, invocation_sym3)
+
+	ident7 = f_sym3.CloseHook()
+
+	invocation_sym3.Results.Ident7 = ident7
+
+	return
+}
+
+// SetCloseStub configures Validator.Close to always return the given values
+func (f_sym4 *FakeValidator) SetCloseStub(ident7 error) {
+	f_sym4.CloseHook = func() error {
+		return ident7
+	}
+}
+
+// CloseCalled returns true if FakeValidator.Close was called
+func (f *FakeValidator) CloseCalled() bool {
+	return len(f.CloseCalls) != 0
+}
+
+// AssertCloseCalled calls t.Error if FakeValidator.Close was not called
+func (f *FakeValidator) AssertCloseCalled(t ValidatorTestingT) {
+	t.Helper()
+	if len(f.CloseCalls) == 0 {
+		t.Error("FakeValidator.Close not called, expected at least one")
+	}
+}
+
+// CloseNotCalled returns true if FakeValidator.Close was not called
+func (f *FakeValidator) CloseNotCalled() bool {
+	return len(f.CloseCalls) == 0
+}
+
+// AssertCloseNotCalled calls t.Error if FakeValidator.Close was called
+func (f *FakeValidator) AssertCloseNotCalled(t ValidatorTestingT) {
+	t.Helper()
+	if len(f.CloseCalls) != 0 {
+		t.Error("FakeValidator.Close called, expected none")
+	}
+}
+
+// CloseCalledOnce returns true if FakeValidator.Close was called exactly once
+func (f *FakeValidator) CloseCalledOnce() bool {
+	return len(f.CloseCalls) == 1
+}
+
+// AssertCloseCalledOnce calls t.Error if FakeValidator.Close was not called exactly once
+func (f *FakeValidator) AssertCloseCalledOnce(t ValidatorTestingT) {
+	t.Helper()
+	if len(f.CloseCalls) != 1 {
+		t.Errorf("FakeValidator.Close called %d times, expected 1", len(f.CloseCalls))
+	}
+}
+
+// CloseCalledN returns true if FakeValidator.Close was called at least n times
+func (f *FakeValidator) CloseCalledN(n int) bool {
+	return len(f.CloseCalls) >= n
+}
+
+// AssertCloseCalledN calls t.Error if FakeValidator.Close was called less than n times
+func (f *FakeValidator) AssertCloseCalledN(t ValidatorTestingT, n int) {
+	t.Helper()
+	if len(f.CloseCalls) < n {
+		t.Errorf("FakeValidator.Close called %d times, expected >= %d", len(f.CloseCalls), n)
+	}
+}
+
+func (f_sym5 *FakeValidator) UpdateKeys() (ident1 error) {
+	if f_sym5.UpdateKeysHook == nil {
 		panic("Validator.UpdateKeys() called but FakeValidator.UpdateKeysHook is nil")
 	}
 
-	invocation_sym3 := new(ValidatorUpdateKeysInvocation)
-	f_sym3.UpdateKeysCalls = append(f_sym3.UpdateKeysCalls, invocation_sym3)
+	invocation_sym5 := new(ValidatorUpdateKeysInvocation)
+	f_sym5.UpdateKeysCalls = append(f_sym5.UpdateKeysCalls, invocation_sym5)
 
-	ident1 = f_sym3.UpdateKeysHook()
+	ident1 = f_sym5.UpdateKeysHook()
 
-	invocation_sym3.Results.Ident1 = ident1
+	invocation_sym5.Results.Ident1 = ident1
 
 	return
 }
 
 // SetUpdateKeysStub configures Validator.UpdateKeys to always return the given values
-func (f_sym4 *FakeValidator) SetUpdateKeysStub(ident1 error) {
-	f_sym4.UpdateKeysHook = func() error {
+func (f_sym6 *FakeValidator) SetUpdateKeysStub(ident1 error) {
+	f_sym6.UpdateKeysHook = func() error {
 		return ident1
 	}
 }
@@ -324,24 +420,24 @@ func (f *FakeValidator) AssertUpdateKeysCalledN(t ValidatorTestingT, n int) {
 	}
 }
 
-func (f_sym5 *FakeValidator) GetRSAPubKeys() (ident1 []*rsa.PublicKey) {
-	if f_sym5.GetRSAPubKeysHook == nil {
+func (f_sym7 *FakeValidator) GetRSAPubKeys() (ident1 []*rsa.PublicKey) {
+	if f_sym7.GetRSAPubKeysHook == nil {
 		panic("Validator.GetRSAPubKeys() called but FakeValidator.GetRSAPubKeysHook is nil")
 	}
 
-	invocation_sym5 := new(ValidatorGetRSAPubKeysInvocation)
-	f_sym5.GetRSAPubKeysCalls = append(f_sym5.GetRSAPubKeysCalls, invocation_sym5)
+	invocation_sym7 := new(ValidatorGetRSAPubKeysInvocation)
+	f_sym7.GetRSAPubKeysCalls = append(f_sym7.GetRSAPubKeysCalls, invocation_sym7)
 
-	ident1 = f_sym5.GetRSAPubKeysHook()
+	ident1 = f_sym7.GetRSAPubKeysHook()
 
-	invocation_sym5.Results.Ident1 = ident1
+	invocation_sym7.Results.Ident1 = ident1
 
 	return
 }
 
 // SetGetRSAPubKeysStub configures Validator.GetRSAPubKeys to always return the given values
-func (f_sym6 *FakeValidator) SetGetRSAPubKeysStub(ident1 []*rsa.PublicKey) {
-	f_sym6.GetRSAPubKeysHook = func() []*rsa.PublicKey {
+func (f_sym8 *FakeValidator) SetGetRSAPubKeysStub(ident1 []*rsa.PublicKey) {
+	f_sym8.GetRSAPubKeysHook = func() []*rsa.PublicKey {
 		return ident1
 	}
 }
@@ -398,46 +494,46 @@ func (f *FakeValidator) AssertGetRSAPubKeysCalledN(t ValidatorTestingT, n int) {
 	}
 }
 
-func (f_sym7 *FakeValidator) ValidateApplicationToken(accessToken string, requiredScopes ...string) (ident1 bool, ident2 error) {
-	if f_sym7.ValidateApplicationTokenHook == nil {
+func (f_sym9 *FakeValidator) ValidateApplicationToken(accessToken string, requiredScopes ...string) (ident1 bool, ident2 error) {
+	if f_sym9.ValidateApplicationTokenHook == nil {
 		panic("Validator.ValidateApplicationToken() called but FakeValidator.ValidateApplicationTokenHook is nil")
 	}
 
-	invocation_sym7 := new(ValidatorValidateApplicationTokenInvocation)
-	f_sym7.ValidateApplicationTokenCalls = append(f_sym7.ValidateApplicationTokenCalls, invocation_sym7)
+	invocation_sym9 := new(ValidatorValidateApplicationTokenInvocation)
+	f_sym9.ValidateApplicationTokenCalls = append(f_sym9.ValidateApplicationTokenCalls, invocation_sym9)
 
-	invocation_sym7.Parameters.AccessToken = accessToken
-	invocation_sym7.Parameters.RequiredScopes = requiredScopes
+	invocation_sym9.Parameters.AccessToken = accessToken
+	invocation_sym9.Parameters.RequiredScopes = requiredScopes
 
-	ident1, ident2 = f_sym7.ValidateApplicationTokenHook(accessToken, requiredScopes...)
+	ident1, ident2 = f_sym9.ValidateApplicationTokenHook(accessToken, requiredScopes...)
 
-	invocation_sym7.Results.Ident1 = ident1
-	invocation_sym7.Results.Ident2 = ident2
+	invocation_sym9.Results.Ident1 = ident1
+	invocation_sym9.Results.Ident2 = ident2
 
 	return
 }
 
 // SetValidateApplicationTokenStub configures Validator.ValidateApplicationToken to always return the given values
-func (f_sym8 *FakeValidator) SetValidateApplicationTokenStub(ident1 bool, ident2 error) {
-	f_sym8.ValidateApplicationTokenHook = func(string, ...string) (bool, error) {
+func (f_sym10 *FakeValidator) SetValidateApplicationTokenStub(ident1 bool, ident2 error) {
+	f_sym10.ValidateApplicationTokenHook = func(string, ...string) (bool, error) {
 		return ident1, ident2
 	}
 }
 
 // SetValidateApplicationTokenInvocation configures Validator.ValidateApplicationToken to return the given results when called with the given parameters
 // If no match is found for an invocation the result(s) of the fallback function are returned
-func (f_sym9 *FakeValidator) SetValidateApplicationTokenInvocation(calls_sym9 []*ValidatorValidateApplicationTokenInvocation, fallback_sym9 func() (bool, error)) {
-	f_sym9.ValidateApplicationTokenHook = func(accessToken string, requiredScopes ...string) (ident1 bool, ident2 error) {
-		for _, call_sym9 := range calls_sym9 {
-			if reflect.DeepEqual(call_sym9.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym9.Parameters.RequiredScopes, requiredScopes) {
-				ident1 = call_sym9.Results.Ident1
-				ident2 = call_sym9.Results.Ident2
+func (f_sym11 *FakeValidator) SetValidateApplicationTokenInvocation(calls_sym11 []*ValidatorValidateApplicationTokenInvocation, fallback_sym11 func() (bool, error)) {
+	f_sym11.ValidateApplicationTokenHook = func(accessToken string, requiredScopes ...string) (ident1 bool, ident2 error) {
+		for _, call_sym11 := range calls_sym11 {
+			if reflect.DeepEqual(call_sym11.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym11.Parameters.RequiredScopes, requiredScopes) {
+				ident1 = call_sym11.Results.Ident1
+				ident2 = call_sym11.Results.Ident2
 
 				return
 			}
 		}
 
-		return fallback_sym9()
+		return fallback_sym11()
 	}
 }
 
@@ -494,9 +590,9 @@ func (f *FakeValidator) AssertValidateApplicationTokenCalledN(t ValidatorTesting
 }
 
 // ValidateApplicationTokenCalledWith returns true if FakeValidator.ValidateApplicationToken was called with the given values
-func (f_sym10 *FakeValidator) ValidateApplicationTokenCalledWith(accessToken string, requiredScopes ...string) bool {
-	for _, call_sym10 := range f_sym10.ValidateApplicationTokenCalls {
-		if reflect.DeepEqual(call_sym10.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym10.Parameters.RequiredScopes, requiredScopes) {
+func (f_sym12 *FakeValidator) ValidateApplicationTokenCalledWith(accessToken string, requiredScopes ...string) bool {
+	for _, call_sym12 := range f_sym12.ValidateApplicationTokenCalls {
+		if reflect.DeepEqual(call_sym12.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym12.Parameters.RequiredScopes, requiredScopes) {
 			return true
 		}
 	}
@@ -505,55 +601,55 @@ func (f_sym10 *FakeValidator) ValidateApplicationTokenCalledWith(accessToken str
 }
 
 // AssertValidateApplicationTokenCalledWith calls t.Error if FakeValidator.ValidateApplicationToken was not called with the given values
-func (f_sym11 *FakeValidator) AssertValidateApplicationTokenCalledWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
+func (f_sym13 *FakeValidator) AssertValidateApplicationTokenCalledWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
 	t.Helper()
-	var found_sym11 bool
-	for _, call_sym11 := range f_sym11.ValidateApplicationTokenCalls {
-		if reflect.DeepEqual(call_sym11.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym11.Parameters.RequiredScopes, requiredScopes) {
-			found_sym11 = true
+	var found_sym13 bool
+	for _, call_sym13 := range f_sym13.ValidateApplicationTokenCalls {
+		if reflect.DeepEqual(call_sym13.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym13.Parameters.RequiredScopes, requiredScopes) {
+			found_sym13 = true
 			break
 		}
 	}
 
-	if !found_sym11 {
+	if !found_sym13 {
 		t.Error("FakeValidator.ValidateApplicationToken not called with expected parameters")
 	}
 }
 
 // ValidateApplicationTokenCalledOnceWith returns true if FakeValidator.ValidateApplicationToken was called exactly once with the given values
-func (f_sym12 *FakeValidator) ValidateApplicationTokenCalledOnceWith(accessToken string, requiredScopes ...string) bool {
-	var count_sym12 int
-	for _, call_sym12 := range f_sym12.ValidateApplicationTokenCalls {
-		if reflect.DeepEqual(call_sym12.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym12.Parameters.RequiredScopes, requiredScopes) {
-			count_sym12++
+func (f_sym14 *FakeValidator) ValidateApplicationTokenCalledOnceWith(accessToken string, requiredScopes ...string) bool {
+	var count_sym14 int
+	for _, call_sym14 := range f_sym14.ValidateApplicationTokenCalls {
+		if reflect.DeepEqual(call_sym14.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym14.Parameters.RequiredScopes, requiredScopes) {
+			count_sym14++
 		}
 	}
 
-	return count_sym12 == 1
+	return count_sym14 == 1
 }
 
 // AssertValidateApplicationTokenCalledOnceWith calls t.Error if FakeValidator.ValidateApplicationToken was not called exactly once with the given values
-func (f_sym13 *FakeValidator) AssertValidateApplicationTokenCalledOnceWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
+func (f_sym15 *FakeValidator) AssertValidateApplicationTokenCalledOnceWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
 	t.Helper()
-	var count_sym13 int
-	for _, call_sym13 := range f_sym13.ValidateApplicationTokenCalls {
-		if reflect.DeepEqual(call_sym13.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym13.Parameters.RequiredScopes, requiredScopes) {
-			count_sym13++
+	var count_sym15 int
+	for _, call_sym15 := range f_sym15.ValidateApplicationTokenCalls {
+		if reflect.DeepEqual(call_sym15.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym15.Parameters.RequiredScopes, requiredScopes) {
+			count_sym15++
 		}
 	}
 
-	if count_sym13 != 1 {
-		t.Errorf("FakeValidator.ValidateApplicationToken called %d times with expected parameters, expected one", count_sym13)
+	if count_sym15 != 1 {
+		t.Errorf("FakeValidator.ValidateApplicationToken called %d times with expected parameters, expected one", count_sym15)
 	}
 }
 
 // ValidateApplicationTokenResultsForCall returns the result values for the first call to FakeValidator.ValidateApplicationToken with the given values
-func (f_sym14 *FakeValidator) ValidateApplicationTokenResultsForCall(accessToken string, requiredScopes ...string) (ident1 bool, ident2 error, found_sym14 bool) {
-	for _, call_sym14 := range f_sym14.ValidateApplicationTokenCalls {
-		if reflect.DeepEqual(call_sym14.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym14.Parameters.RequiredScopes, requiredScopes) {
-			ident1 = call_sym14.Results.Ident1
-			ident2 = call_sym14.Results.Ident2
-			found_sym14 = true
+func (f_sym16 *FakeValidator) ValidateApplicationTokenResultsForCall(accessToken string, requiredScopes ...string) (ident1 bool, ident2 error, found_sym16 bool) {
+	for _, call_sym16 := range f_sym16.ValidateApplicationTokenCalls {
+		if reflect.DeepEqual(call_sym16.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym16.Parameters.RequiredScopes, requiredScopes) {
+			ident1 = call_sym16.Results.Ident1
+			ident2 = call_sym16.Results.Ident2
+			found_sym16 = true
 			break
 		}
 	}
@@ -561,46 +657,46 @@ func (f_sym14 *FakeValidator) ValidateApplicationTokenResultsForCall(accessToken
 	return
 }
 
-func (f_sym15 *FakeValidator) GetAndValidateToken(accessToken string, requiredScopes ...string) (ident1 jwt.JWT, ident2 error) {
-	if f_sym15.GetAndValidateTokenHook == nil {
+func (f_sym17 *FakeValidator) GetAndValidateToken(accessToken string, requiredScopes ...string) (ident1 jwt.JWT, ident2 error) {
+	if f_sym17.GetAndValidateTokenHook == nil {
 		panic("Validator.GetAndValidateToken() called but FakeValidator.GetAndValidateTokenHook is nil")
 	}
 
-	invocation_sym15 := new(ValidatorGetAndValidateTokenInvocation)
-	f_sym15.GetAndValidateTokenCalls = append(f_sym15.GetAndValidateTokenCalls, invocation_sym15)
+	invocation_sym17 := new(ValidatorGetAndValidateTokenInvocation)
+	f_sym17.GetAndValidateTokenCalls = append(f_sym17.GetAndValidateTokenCalls, invocation_sym17)
 
-	invocation_sym15.Parameters.AccessToken = accessToken
-	invocation_sym15.Parameters.RequiredScopes = requiredScopes
+	invocation_sym17.Parameters.AccessToken = accessToken
+	invocation_sym17.Parameters.RequiredScopes = requiredScopes
 
-	ident1, ident2 = f_sym15.GetAndValidateTokenHook(accessToken, requiredScopes...)
+	ident1, ident2 = f_sym17.GetAndValidateTokenHook(accessToken, requiredScopes...)
 
-	invocation_sym15.Results.Ident1 = ident1
-	invocation_sym15.Results.Ident2 = ident2
+	invocation_sym17.Results.Ident1 = ident1
+	invocation_sym17.Results.Ident2 = ident2
 
 	return
 }
 
 // SetGetAndValidateTokenStub configures Validator.GetAndValidateToken to always return the given values
-func (f_sym16 *FakeValidator) SetGetAndValidateTokenStub(ident1 jwt.JWT, ident2 error) {
-	f_sym16.GetAndValidateTokenHook = func(string, ...string) (jwt.JWT, error) {
+func (f_sym18 *FakeValidator) SetGetAndValidateTokenStub(ident1 jwt.JWT, ident2 error) {
+	f_sym18.GetAndValidateTokenHook = func(string, ...string) (jwt.JWT, error) {
 		return ident1, ident2
 	}
 }
 
 // SetGetAndValidateTokenInvocation configures Validator.GetAndValidateToken to return the given results when called with the given parameters
 // If no match is found for an invocation the result(s) of the fallback function are returned
-func (f_sym17 *FakeValidator) SetGetAndValidateTokenInvocation(calls_sym17 []*ValidatorGetAndValidateTokenInvocation, fallback_sym17 func() (jwt.JWT, error)) {
-	f_sym17.GetAndValidateTokenHook = func(accessToken string, requiredScopes ...string) (ident1 jwt.JWT, ident2 error) {
-		for _, call_sym17 := range calls_sym17 {
-			if reflect.DeepEqual(call_sym17.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym17.Parameters.RequiredScopes, requiredScopes) {
-				ident1 = call_sym17.Results.Ident1
-				ident2 = call_sym17.Results.Ident2
+func (f_sym19 *FakeValidator) SetGetAndValidateTokenInvocation(calls_sym19 []*ValidatorGetAndValidateTokenInvocation, fallback_sym19 func() (jwt.JWT, error)) {
+	f_sym19.GetAndValidateTokenHook = func(accessToken string, requiredScopes ...string) (ident1 jwt.JWT, ident2 error) {
+		for _, call_sym19 := range calls_sym19 {
+			if reflect.DeepEqual(call_sym19.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym19.Parameters.RequiredScopes, requiredScopes) {
+				ident1 = call_sym19.Results.Ident1
+				ident2 = call_sym19.Results.Ident2
 
 				return
 			}
 		}
 
-		return fallback_sym17()
+		return fallback_sym19()
 	}
 }
 
@@ -657,9 +753,9 @@ func (f *FakeValidator) AssertGetAndValidateTokenCalledN(t ValidatorTestingT, n 
 }
 
 // GetAndValidateTokenCalledWith returns true if FakeValidator.GetAndValidateToken was called with the given values
-func (f_sym18 *FakeValidator) GetAndValidateTokenCalledWith(accessToken string, requiredScopes ...string) bool {
-	for _, call_sym18 := range f_sym18.GetAndValidateTokenCalls {
-		if reflect.DeepEqual(call_sym18.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym18.Parameters.RequiredScopes, requiredScopes) {
+func (f_sym20 *FakeValidator) GetAndValidateTokenCalledWith(accessToken string, requiredScopes ...string) bool {
+	for _, call_sym20 := range f_sym20.GetAndValidateTokenCalls {
+		if reflect.DeepEqual(call_sym20.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym20.Parameters.RequiredScopes, requiredScopes) {
 			return true
 		}
 	}
@@ -668,55 +764,55 @@ func (f_sym18 *FakeValidator) GetAndValidateTokenCalledWith(accessToken string, 
 }
 
 // AssertGetAndValidateTokenCalledWith calls t.Error if FakeValidator.GetAndValidateToken was not called with the given values
-func (f_sym19 *FakeValidator) AssertGetAndValidateTokenCalledWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
+func (f_sym21 *FakeValidator) AssertGetAndValidateTokenCalledWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
 	t.Helper()
-	var found_sym19 bool
-	for _, call_sym19 := range f_sym19.GetAndValidateTokenCalls {
-		if reflect.DeepEqual(call_sym19.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym19.Parameters.RequiredScopes, requiredScopes) {
-			found_sym19 = true
+	var found_sym21 bool
+	for _, call_sym21 := range f_sym21.GetAndValidateTokenCalls {
+		if reflect.DeepEqual(call_sym21.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym21.Parameters.RequiredScopes, requiredScopes) {
+			found_sym21 = true
 			break
 		}
 	}
 
-	if !found_sym19 {
+	if !found_sym21 {
 		t.Error("FakeValidator.GetAndValidateToken not called with expected parameters")
 	}
 }
 
 // GetAndValidateTokenCalledOnceWith returns true if FakeValidator.GetAndValidateToken was called exactly once with the given values
-func (f_sym20 *FakeValidator) GetAndValidateTokenCalledOnceWith(accessToken string, requiredScopes ...string) bool {
-	var count_sym20 int
-	for _, call_sym20 := range f_sym20.GetAndValidateTokenCalls {
-		if reflect.DeepEqual(call_sym20.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym20.Parameters.RequiredScopes, requiredScopes) {
-			count_sym20++
+func (f_sym22 *FakeValidator) GetAndValidateTokenCalledOnceWith(accessToken string, requiredScopes ...string) bool {
+	var count_sym22 int
+	for _, call_sym22 := range f_sym22.GetAndValidateTokenCalls {
+		if reflect.DeepEqual(call_sym22.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym22.Parameters.RequiredScopes, requiredScopes) {
+			count_sym22++
 		}
 	}
 
-	return count_sym20 == 1
+	return count_sym22 == 1
 }
 
 // AssertGetAndValidateTokenCalledOnceWith calls t.Error if FakeValidator.GetAndValidateToken was not called exactly once with the given values
-func (f_sym21 *FakeValidator) AssertGetAndValidateTokenCalledOnceWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
+func (f_sym23 *FakeValidator) AssertGetAndValidateTokenCalledOnceWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
 	t.Helper()
-	var count_sym21 int
-	for _, call_sym21 := range f_sym21.GetAndValidateTokenCalls {
-		if reflect.DeepEqual(call_sym21.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym21.Parameters.RequiredScopes, requiredScopes) {
-			count_sym21++
+	var count_sym23 int
+	for _, call_sym23 := range f_sym23.GetAndValidateTokenCalls {
+		if reflect.DeepEqual(call_sym23.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym23.Parameters.RequiredScopes, requiredScopes) {
+			count_sym23++
 		}
 	}
 
-	if count_sym21 != 1 {
-		t.Errorf("FakeValidator.GetAndValidateToken called %d times with expected parameters, expected one", count_sym21)
+	if count_sym23 != 1 {
+		t.Errorf("FakeValidator.GetAndValidateToken called %d times with expected parameters, expected one", count_sym23)
 	}
 }
 
 // GetAndValidateTokenResultsForCall returns the result values for the first call to FakeValidator.GetAndValidateToken with the given values
-func (f_sym22 *FakeValidator) GetAndValidateTokenResultsForCall(accessToken string, requiredScopes ...string) (ident1 jwt.JWT, ident2 error, found_sym22 bool) {
-	for _, call_sym22 := range f_sym22.GetAndValidateTokenCalls {
-		if reflect.DeepEqual(call_sym22.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym22.Parameters.RequiredScopes, requiredScopes) {
-			ident1 = call_sym22.Results.Ident1
-			ident2 = call_sym22.Results.Ident2
-			found_sym22 = true
+func (f_sym24 *FakeValidator) GetAndValidateTokenResultsForCall(accessToken string, requiredScopes ...string) (ident1 jwt.JWT, ident2 error, found_sym24 bool) {
+	for _, call_sym24 := range f_sym24.GetAndValidateTokenCalls {
+		if reflect.DeepEqual(call_sym24.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym24.Parameters.RequiredScopes, requiredScopes) {
+			ident1 = call_sym24.Results.Ident1
+			ident2 = call_sym24.Results.Ident2
+			found_sym24 = true
 			break
 		}
 	}
@@ -724,50 +820,50 @@ func (f_sym22 *FakeValidator) GetAndValidateTokenResultsForCall(accessToken stri
 	return
 }
 
-func (f_sym23 *FakeValidator) ValidateUserToken(accessToken string, requiredScopes ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
-	if f_sym23.ValidateUserTokenHook == nil {
+func (f_sym25 *FakeValidator) ValidateUserToken(accessToken string, requiredScopes ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
+	if f_sym25.ValidateUserTokenHook == nil {
 		panic("Validator.ValidateUserToken() called but FakeValidator.ValidateUserTokenHook is nil")
 	}
 
-	invocation_sym23 := new(ValidatorValidateUserTokenInvocation)
-	f_sym23.ValidateUserTokenCalls = append(f_sym23.ValidateUserTokenCalls, invocation_sym23)
+	invocation_sym25 := new(ValidatorValidateUserTokenInvocation)
+	f_sym25.ValidateUserTokenCalls = append(f_sym25.ValidateUserTokenCalls, invocation_sym25)
 
-	invocation_sym23.Parameters.AccessToken = accessToken
-	invocation_sym23.Parameters.RequiredScopes = requiredScopes
+	invocation_sym25.Parameters.AccessToken = accessToken
+	invocation_sym25.Parameters.RequiredScopes = requiredScopes
 
-	ident1, ident2, ident3, ident4 = f_sym23.ValidateUserTokenHook(accessToken, requiredScopes...)
+	ident1, ident2, ident3, ident4 = f_sym25.ValidateUserTokenHook(accessToken, requiredScopes...)
 
-	invocation_sym23.Results.Ident1 = ident1
-	invocation_sym23.Results.Ident2 = ident2
-	invocation_sym23.Results.Ident3 = ident3
-	invocation_sym23.Results.Ident4 = ident4
+	invocation_sym25.Results.Ident1 = ident1
+	invocation_sym25.Results.Ident2 = ident2
+	invocation_sym25.Results.Ident3 = ident3
+	invocation_sym25.Results.Ident4 = ident4
 
 	return
 }
 
 // SetValidateUserTokenStub configures Validator.ValidateUserToken to always return the given values
-func (f_sym24 *FakeValidator) SetValidateUserTokenStub(ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
-	f_sym24.ValidateUserTokenHook = func(string, ...string) (uint64, uint64, bool, error) {
+func (f_sym26 *FakeValidator) SetValidateUserTokenStub(ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
+	f_sym26.ValidateUserTokenHook = func(string, ...string) (uint64, uint64, bool, error) {
 		return ident1, ident2, ident3, ident4
 	}
 }
 
 // SetValidateUserTokenInvocation configures Validator.ValidateUserToken to return the given results when called with the given parameters
 // If no match is found for an invocation the result(s) of the fallback function are returned
-func (f_sym25 *FakeValidator) SetValidateUserTokenInvocation(calls_sym25 []*ValidatorValidateUserTokenInvocation, fallback_sym25 func() (uint64, uint64, bool, error)) {
-	f_sym25.ValidateUserTokenHook = func(accessToken string, requiredScopes ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
-		for _, call_sym25 := range calls_sym25 {
-			if reflect.DeepEqual(call_sym25.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym25.Parameters.RequiredScopes, requiredScopes) {
-				ident1 = call_sym25.Results.Ident1
-				ident2 = call_sym25.Results.Ident2
-				ident3 = call_sym25.Results.Ident3
-				ident4 = call_sym25.Results.Ident4
+func (f_sym27 *FakeValidator) SetValidateUserTokenInvocation(calls_sym27 []*ValidatorValidateUserTokenInvocation, fallback_sym27 func() (uint64, uint64, bool, error)) {
+	f_sym27.ValidateUserTokenHook = func(accessToken string, requiredScopes ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error) {
+		for _, call_sym27 := range calls_sym27 {
+			if reflect.DeepEqual(call_sym27.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym27.Parameters.RequiredScopes, requiredScopes) {
+				ident1 = call_sym27.Results.Ident1
+				ident2 = call_sym27.Results.Ident2
+				ident3 = call_sym27.Results.Ident3
+				ident4 = call_sym27.Results.Ident4
 
 				return
 			}
 		}
 
-		return fallback_sym25()
+		return fallback_sym27()
 	}
 }
 
@@ -824,9 +920,9 @@ func (f *FakeValidator) AssertValidateUserTokenCalledN(t ValidatorTestingT, n in
 }
 
 // ValidateUserTokenCalledWith returns true if FakeValidator.ValidateUserToken was called with the given values
-func (f_sym26 *FakeValidator) ValidateUserTokenCalledWith(accessToken string, requiredScopes ...string) bool {
-	for _, call_sym26 := range f_sym26.ValidateUserTokenCalls {
-		if reflect.DeepEqual(call_sym26.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym26.Parameters.RequiredScopes, requiredScopes) {
+func (f_sym28 *FakeValidator) ValidateUserTokenCalledWith(accessToken string, requiredScopes ...string) bool {
+	for _, call_sym28 := range f_sym28.ValidateUserTokenCalls {
+		if reflect.DeepEqual(call_sym28.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym28.Parameters.RequiredScopes, requiredScopes) {
 			return true
 		}
 	}
@@ -835,57 +931,57 @@ func (f_sym26 *FakeValidator) ValidateUserTokenCalledWith(accessToken string, re
 }
 
 // AssertValidateUserTokenCalledWith calls t.Error if FakeValidator.ValidateUserToken was not called with the given values
-func (f_sym27 *FakeValidator) AssertValidateUserTokenCalledWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
+func (f_sym29 *FakeValidator) AssertValidateUserTokenCalledWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
 	t.Helper()
-	var found_sym27 bool
-	for _, call_sym27 := range f_sym27.ValidateUserTokenCalls {
-		if reflect.DeepEqual(call_sym27.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym27.Parameters.RequiredScopes, requiredScopes) {
-			found_sym27 = true
+	var found_sym29 bool
+	for _, call_sym29 := range f_sym29.ValidateUserTokenCalls {
+		if reflect.DeepEqual(call_sym29.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym29.Parameters.RequiredScopes, requiredScopes) {
+			found_sym29 = true
 			break
 		}
 	}
 
-	if !found_sym27 {
+	if !found_sym29 {
 		t.Error("FakeValidator.ValidateUserToken not called with expected parameters")
 	}
 }
 
 // ValidateUserTokenCalledOnceWith returns true if FakeValidator.ValidateUserToken was called exactly once with the given values
-func (f_sym28 *FakeValidator) ValidateUserTokenCalledOnceWith(accessToken string, requiredScopes ...string) bool {
-	var count_sym28 int
-	for _, call_sym28 := range f_sym28.ValidateUserTokenCalls {
-		if reflect.DeepEqual(call_sym28.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym28.Parameters.RequiredScopes, requiredScopes) {
-			count_sym28++
+func (f_sym30 *FakeValidator) ValidateUserTokenCalledOnceWith(accessToken string, requiredScopes ...string) bool {
+	var count_sym30 int
+	for _, call_sym30 := range f_sym30.ValidateUserTokenCalls {
+		if reflect.DeepEqual(call_sym30.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym30.Parameters.RequiredScopes, requiredScopes) {
+			count_sym30++
 		}
 	}
 
-	return count_sym28 == 1
+	return count_sym30 == 1
 }
 
 // AssertValidateUserTokenCalledOnceWith calls t.Error if FakeValidator.ValidateUserToken was not called exactly once with the given values
-func (f_sym29 *FakeValidator) AssertValidateUserTokenCalledOnceWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
+func (f_sym31 *FakeValidator) AssertValidateUserTokenCalledOnceWith(t ValidatorTestingT, accessToken string, requiredScopes ...string) {
 	t.Helper()
-	var count_sym29 int
-	for _, call_sym29 := range f_sym29.ValidateUserTokenCalls {
-		if reflect.DeepEqual(call_sym29.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym29.Parameters.RequiredScopes, requiredScopes) {
-			count_sym29++
+	var count_sym31 int
+	for _, call_sym31 := range f_sym31.ValidateUserTokenCalls {
+		if reflect.DeepEqual(call_sym31.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym31.Parameters.RequiredScopes, requiredScopes) {
+			count_sym31++
 		}
 	}
 
-	if count_sym29 != 1 {
-		t.Errorf("FakeValidator.ValidateUserToken called %d times with expected parameters, expected one", count_sym29)
+	if count_sym31 != 1 {
+		t.Errorf("FakeValidator.ValidateUserToken called %d times with expected parameters, expected one", count_sym31)
 	}
 }
 
 // ValidateUserTokenResultsForCall returns the result values for the first call to FakeValidator.ValidateUserToken with the given values
-func (f_sym30 *FakeValidator) ValidateUserTokenResultsForCall(accessToken string, requiredScopes ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error, found_sym30 bool) {
-	for _, call_sym30 := range f_sym30.ValidateUserTokenCalls {
-		if reflect.DeepEqual(call_sym30.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym30.Parameters.RequiredScopes, requiredScopes) {
-			ident1 = call_sym30.Results.Ident1
-			ident2 = call_sym30.Results.Ident2
-			ident3 = call_sym30.Results.Ident3
-			ident4 = call_sym30.Results.Ident4
-			found_sym30 = true
+func (f_sym32 *FakeValidator) ValidateUserTokenResultsForCall(accessToken string, requiredScopes ...string) (ident1 uint64, ident2 uint64, ident3 bool, ident4 error, found_sym32 bool) {
+	for _, call_sym32 := range f_sym32.ValidateUserTokenCalls {
+		if reflect.DeepEqual(call_sym32.Parameters.AccessToken, accessToken) && reflect.DeepEqual(call_sym32.Parameters.RequiredScopes, requiredScopes) {
+			ident1 = call_sym32.Results.Ident1
+			ident2 = call_sym32.Results.Ident2
+			ident3 = call_sym32.Results.Ident3
+			ident4 = call_sym32.Results.Ident4
+			found_sym32 = true
 			break
 		}
 	}
@@ -893,24 +989,24 @@ func (f_sym30 *FakeValidator) ValidateUserTokenResultsForCall(accessToken string
 	return
 }
 
-func (f_sym31 *FakeValidator) GetOpenIDConfig() (ident1 access.OpenIDConfig) {
-	if f_sym31.GetOpenIDConfigHook == nil {
+func (f_sym33 *FakeValidator) GetOpenIDConfig() (ident1 access.OpenIDConfig) {
+	if f_sym33.GetOpenIDConfigHook == nil {
 		panic("Validator.GetOpenIDConfig() called but FakeValidator.GetOpenIDConfigHook is nil")
 	}
 
-	invocation_sym31 := new(ValidatorGetOpenIDConfigInvocation)
-	f_sym31.GetOpenIDConfigCalls = append(f_sym31.GetOpenIDConfigCalls, invocation_sym31)
+	invocation_sym33 := new(ValidatorGetOpenIDConfigInvocation)
+	f_sym33.GetOpenIDConfigCalls = append(f_sym33.GetOpenIDConfigCalls, invocation_sym33)
 
-	ident1 = f_sym31.GetOpenIDConfigHook()
+	ident1 = f_sym33.GetOpenIDConfigHook()
 
-	invocation_sym31.Results.Ident1 = ident1
+	invocation_sym33.Results.Ident1 = ident1
 
 	return
 }
 
 // SetGetOpenIDConfigStub configures Validator.GetOpenIDConfig to always return the given values
-func (f_sym32 *FakeValidator) SetGetOpenIDConfigStub(ident1 access.OpenIDConfig) {
-	f_sym32.GetOpenIDConfigHook = func() access.OpenIDConfig {
+func (f_sym34 *FakeValidator) SetGetOpenIDConfigStub(ident1 access.OpenIDConfig) {
+	f_sym34.GetOpenIDConfigHook = func() access.OpenIDConfig {
 		return ident1
 	}
 }
